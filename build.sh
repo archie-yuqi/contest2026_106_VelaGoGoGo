@@ -12,7 +12,7 @@
 #   ./build.sh full-flash      full build + flash
 # ============================================================================
 
-set -euo pipefail
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEAM_REPO="$SCRIPT_DIR"
@@ -28,6 +28,8 @@ TEAM_RCS="$TEAM_REPO/configs/rcS.nsh"
 VENDOR_GIT="$WORKSPACE/vendor/allwinnertech"
 
 export PATH="$WORKSPACE/prebuilts/build-tools/linux-x86_64/bin:$PATH"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
 
 restore_vendor() {
     cd "$VENDOR_GIT"
@@ -48,7 +50,7 @@ do_full_build() {
 
     # Build
     cd "$WORKSPACE"
-    ./build.sh "$BOARD_CONFIG" -j8
+    ./build.sh "$BOARD_CONFIG" -j8 || die "full build failed"
 
     # Restore vendor immediately
     restore_vendor
@@ -58,17 +60,16 @@ do_full_build() {
 do_incremental_build() {
     echo "=== Incremental build ==="
     cd "$WORKSPACE"
-    source build/envsetup.sh 2>/dev/null
-    make -C "$NUTTX_DIR" EXTRAFLAGS="-Wno-cpp -Wno-deprecated-declarations" -j8
+    # envsetup.sh references NUTTX_DIR_NAME (must be set for -u mode)
+    export NUTTX_DIR_NAME="${NUTTX_DIR_NAME:-nuttx}"
+    source build/envsetup.sh 2>/dev/null || true
+    make -C "$NUTTX_DIR" EXTRAFLAGS="-Wno-cpp -Wno-deprecated-declarations" -j8 || die "incremental build failed"
     echo "=== Incremental build done ==="
 }
 
 do_flash() {
     local vela="$NUTTX_DIR/vela.bin"
-    if [ ! -f "$vela" ]; then
-        echo "ERROR: $vela not found. Build first."
-        exit 1
-    fi
+    [ -f "$vela" ] || die "$vela not found. Build first."
 
     echo "=== Flashing to device ==="
     adb push "$vela" /data/vela.bin
@@ -85,18 +86,8 @@ do_flash() {
 MODE="${1:-incremental}"
 
 case "$MODE" in
-    full)
-        do_full_build
-        ;;
-    flash)
-        do_incremental_build
-        do_flash
-        ;;
-    full-flash|flash-full)
-        do_full_build
-        do_flash
-        ;;
-    *)
-        do_incremental_build
-        ;;
+    full)        do_full_build ;;
+    flash)       do_incremental_build; do_flash ;;
+    full-flash|flash-full) do_full_build; do_flash ;;
+    *)           do_incremental_build ;;
 esac
