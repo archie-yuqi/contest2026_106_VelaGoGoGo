@@ -54,7 +54,10 @@ static uint8_t signal_level_for_rssi(int rssi_dbm, uint8_t previous_level)
 
 bool wifi_status_is_connected(void)
 {
-    return g_status.has_ip;
+    /* 必须同时关联到 AP 且拿到 IP。只看 has_ip 会被接口上残留的旧 IP
+     * 骗过:WiFi 未关联(AP=00:00:00:00:00:00)但接口仍留着上次的 IP 时,
+     * 单看 has_ip 会误判为已连网,导致豆包在无网时反复 TLS 超时。 */
+    return g_status.associated && g_status.has_ip;
 }
 
 void wifi_status_get(wifi_status_t *status)

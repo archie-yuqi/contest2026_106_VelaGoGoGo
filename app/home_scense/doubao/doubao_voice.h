@@ -27,6 +27,7 @@ typedef struct doubao_voice_snapshot_s
   char user_text[DOUBAO_TEXT_MAX];
   char assistant_text[DOUBAO_REPLY_MAX];
   char error_text[DOUBAO_ERROR_MAX];
+  unsigned turn_seq;   /* 每轮对话开始 +1,供 UI 把上一轮气泡沉淀为历史 */
 } doubao_voice_snapshot_t;
 
 int doubao_voice_init(void);
