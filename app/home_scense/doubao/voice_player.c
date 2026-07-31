@@ -172,7 +172,12 @@ void voice_player_close(voice_player_t *player)
       close(player->write_fd);
       player->write_fd = -1;
     }
-  if (player->running)
+  /* 必须无条件发 AUDIO_MSG_STOP:nxaudio_msgloop 只在收到 STOP 时才退出,
+   * 播放自然结束(AUDIO_MSG_COMPLETE)只把回调里的 running 置 0,并不会让
+   * msgloop 跳出——它会继续阻塞在 mq_receive。若因 running==0 而跳过
+   * nxaudio_stop,后面的 pthread_join 会永久等待,worker 线程卡在
+   * "Waiting MQ empty",整个语音功能死锁。故这里始终 stop。 */
+  if (player->audio_initialized)
     {
       (void)nxaudio_stop(&player->audio);
     }

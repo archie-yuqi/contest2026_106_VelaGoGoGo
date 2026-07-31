@@ -44,6 +44,29 @@ static int curl_recv_to(CURL *c, curl_socket_t fd, void *b, size_t n, int ms) {
   } while(el<ms);
   return 0; }
 
+/* 在 ms 超时内精确读满 n 字节(累加分段到达的字节)。
+ * 返回 n=读满;0=整段超时且一个字节都没来(干净超时);-EIO=读到部分后中断。
+ * 修复:此前 ws_recv 直接 curl_recv_to(hd,2,ms),若帧头分两次到达(先到 1
+ * 字节)会 !=2 而误判 -EIO,进而被 voice_transport_receive 折叠成 0,让
+ * run_turn 收 END_ASR 后第一次 recv 就"超时"退出,豆包回复漏进 idle 循环。 */
+static int recv_exact(CURL *c, curl_socket_t fd, uint8_t *b, size_t n, int ms) {
+  struct timeval st,now,df; int el; size_t got=0; CURLcode r; size_t nr;
+  gettimeofday(&st,NULL);
+  do {
+    nr=0; r=curl_easy_recv(c,b+got,n-got,&nr);
+    if(r==CURLE_OK&&nr>0){ got+=nr; if(got>=n)return(int)n; continue; }
+    /* 连接关闭/出错:CURLE_OK 且 nr==0 是对端 EOF;非 AGAIN 是错误。
+     * 两者都表示连接已死,立即返回 -ECONNRESET 触发上层重连,
+     * 绝不能继续 select 空转(否则死循环疯狂重试 + 刷日志 → 崩溃)。 */
+    if(r==CURLE_OK&&nr==0) return -ECONNRESET;
+    if(r!=CURLE_AGAIN)     return -ECONNRESET;
+    { fd_set f;struct timeval tv={0,20000};
+      FD_ZERO(&f);FD_SET(fd,&f);select(FD_SETSIZE,&f,NULL,NULL,&tv); }
+    gettimeofday(&now,NULL);timersub(&now,&st,&df);
+    el=(int)(df.tv_sec*1000+df.tv_usec/1000);
+  } while(el<ms);
+  return got==0?0:-EIO; }
+
 static ssize_t curl_send_to(CURL *c, curl_socket_t fd, const void *d, size_t n, int ms) {
   struct timeval st,now,df; int el; ssize_t s;
   gettimeofday(&st,NULL);
@@ -109,21 +132,47 @@ static int ws_send(CURL *c, curl_socket_t fd, const uint8_t *p, size_t sz) {
 
 static int ws_recv(CURL *c, curl_socket_t fd, uint8_t *p, size_t cap, int ms) {
   uint8_t hd[2],op;uint64_t ln;size_t ps;int r;
-  if(curl_recv_to(c,fd,hd,2,ms)!=2)return-EIO;
+  /* 帧头:读满 2 字节。干净超时(整个 ms 内无任何字节)返回 -ETIMEDOUT,
+   * 供上层区分"暂时没数据"(继续等)与"真错误"。 */
+  r=recv_exact(c,fd,hd,2,ms);
+  if(r==0)return-ETIMEDOUT;
+  if(r==-ECONNRESET)return-ECONNRESET;   /* 连接已死 → 上层重连 */
+  if(r!=2)return-EIO;
   op=hd[0]&0x0f;ln=hd[1]&0x7f;if(hd[1]&WS_MASK)return-EIO;
-  if(ln==126){uint8_t e[2];if(curl_recv_to(c,fd,e,2,5000)!=2)return-EIO;
+  if(ln==126){uint8_t e[2];if(recv_exact(c,fd,e,2,5000)!=2)return-EIO;
     ln=((uint64_t)e[0]<<8)|e[1];}
   else if(ln==127){uint8_t e[8];uint32_t hi,lo;
-    if(curl_recv_to(c,fd,e,8,5000)!=8)return-EIO;
+    if(recv_exact(c,fd,e,8,5000)!=8)return-EIO;
     hi=((uint32_t)e[0]<<24)|((uint32_t)e[1]<<16)|((uint32_t)e[2]<<8)|e[3];
     lo=((uint32_t)e[4]<<24)|((uint32_t)e[5]<<16)|((uint32_t)e[6]<<8)|e[7];
     ln=(uint64_t)hi*0x100000000u+lo;}
   if(ln>cap)return-EMSGSIZE;
-  for(ps=0;ps<(size_t)ln;ps+=(size_t)r){
-    r=curl_recv_to(c,fd,p+ps,(size_t)ln-ps,5000);if(r<=0)return-EIO;}
-  switch(op){case WS_OPCODE_CLOSE:return-ECONNRESET;
-  case WS_OPCODE_PING:{uint8_t pn[2]={WS_FIN|WS_OPCODE_PONG,0};
-    curl_send(c,pn,2);return 0;}
+  if(ln>0){r=recv_exact(c,fd,p,(size_t)ln,5000);if(r!=(int)ln)return-EIO;}
+  ps=(size_t)ln;
+  switch(op){case WS_OPCODE_CLOSE:{
+    /* 记录服务端关连接的状态码(payload 前 2 字节大端),定位为何频繁断开 */
+    int code = (ln>=2)? (((int)p[0]<<8)|p[1]) : -1;
+    DOUBAO_ERR("doubao:WS CLOSE code=%d len=%llu",code,(unsigned long long)ln);
+    return-ECONNRESET;}
+  case WS_OPCODE_PING:{
+    /* WebSocket 要求客户端→服务端所有帧必须加掩码,并回显 PING 的
+     * payload。此前回的 PONG 未加掩码(且丢了 payload),服务器判定协议
+     * 违规 → 每隔几秒关连接,表现为豆包反复重连。这里用带掩码的 ws_send
+     * 发 PONG(ws_send 内部已加掩码位+4字节掩码 key)。 */
+    uint8_t mp[2]={WS_FIN|WS_OPCODE_PONG,WS_MASK}; uint8_t mk[4]; size_t i;
+    uint8_t *fr; size_t frn;
+    if(ln>125)return 0;                    /* 控制帧 payload ≤125,超出忽略 */
+    mp[1]|=(uint8_t)ln;
+    frn=2+4+(size_t)ln; fr=malloc(frn);
+    if(!fr)return 0;
+    fr[0]=mp[0]; fr[1]=mp[1];
+    mk[0]=(uint8_t)(rand()&0xff);mk[1]=(uint8_t)(rand()&0xff);
+    mk[2]=(uint8_t)(rand()&0xff);mk[3]=(uint8_t)(rand()&0xff);
+    memcpy(fr+2,mk,4);
+    for(i=0;i<(size_t)ln;i++)fr[6+i]=p[i]^mk[i&3];  /* 回显 PING payload */
+    curl_send_to(c,fd,fr,frn,2000);
+    free(fr);
+    return 0;}
   case WS_OPCODE_BINARY:return(int)ps;default:return(int)ps;}
 }
 
@@ -180,8 +229,11 @@ int voice_transport_receive(voice_transport_t*t,voice_ws_opcode_t*op,
       return n;}
     t->pbf_len=0;}
   r=ws_recv(t->curl,t->fd,d,c,ms);
-  if(r==0)return 0;if(r==-ECONNRESET){*op=VOICE_WS_CLOSE;return r;}
-  if(r<0)return 0;*op=VOICE_WS_BINARY;return r; }
+  if(r==-ETIMEDOUT)return 0;                 /* 干净超时:无数据,让上层继续等 */
+  if(r==-ECONNRESET){*op=VOICE_WS_CLOSE;return r;}  /* 连接已死 → 重连 */
+  if(r==-EMSGSIZE)return 0;                  /* 超大帧丢弃,不断连 */
+  if(r<0){*op=VOICE_WS_CLOSE;return-ECONNRESET;}  /* 读到半帧中断:视为断连重连,不空转 */
+  *op=VOICE_WS_BINARY;return r; }
 
 const char* voice_transport_logid(const voice_transport_t*t){return t?t->logid:"";}
 
