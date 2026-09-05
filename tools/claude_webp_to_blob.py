@@ -35,7 +35,7 @@ def main():
     blob = args.output.with_suffix(".bin")
     blob.write_bytes(b"".join(frames))
     asm = args.output.with_suffix(".S")
-    asm.write_text(f'''    .section .rodata.claude,"a",%progbits\n    .global {args.symbol}_data\n    .balign 4\n{args.symbol}_data:\n    .incbin "{blob.resolve()}"\n''')
+    asm.write_text(f'''    .section .rodata.claude,"a",%progbits\n    .global {args.symbol}_data\n    .balign 4\n{args.symbol}_data:\n    .incbin "{blob.name}"\n''')
     print(f"{args.symbol}: {len(frames)} frames, {len(blob.read_bytes())} bytes")
 
 if __name__ == "__main__":
