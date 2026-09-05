@@ -6,6 +6,7 @@
 config LVX_USE_DEMO_CONTEST2026_106_HELLO_APP
 	bool "Contest 2026 team 106 home_scense app"
 	default n
+	select NETUTILS_MQTTC
 	---help---
 		Enable the contest 2026 team 106 home_scense LVGL application.
 		Based on luncher_mini, with modular sensor / LED / UI architecture.

@@ -4,9 +4,9 @@
 include $(APPDIR)/Make.defs
 
 MAINSRC = main.c
-CSRCS   = sensor.c ui_main.c ui_light.c ui_about.c led_control.c ui_emoji_idle.c ui_status.c \
-         ui_status_bar.c ui_settings.c wifi_status.c
-ASRCS   = emoji_blob.S
+CSRCS   = sensor.c ui_main.c ui_light.c ui_about.c led_control.c ui_emoji_idle.c \
+         claude_mqtt.c ui_claude_status.c ui_status_bar.c ui_settings.c wifi_status.c
+ASRCS   = emoji_blob.S claude_idle.S claude_thinking.S claude_executing.S
 
 ifeq ($(CONFIG_LVX_USE_DEMO_CONTEST2026_106_DOUBAO_VOICE),y)
 CSRCS += ui_voice.c doubao/doubao_voice.c doubao/doubao_protocol.c \
@@ -20,6 +20,12 @@ STACKSIZE = $(CONFIG_LVX_USE_DEMO_CONTEST2026_106_STACKSIZE)
 # Allwinner HAL includes (required by led_control.c -> sunxi_hal_ledc.h)
 include $(APPDIR)/vendor/allwinnertech/Common.mk
 $(eval $(AW_ADD_HAL_INCLUDES))
+
+# MQTT-C headers and sources (the Make build exposes MQTT-C as a library
+# only to its optional examples, so link its two core objects here).
+CFLAGS += -I$(APPDIR)/netutils/mqttc/MQTT-C/include
+VPATH  += $(APPDIR)/netutils/mqttc/MQTT-C/src
+CSRCS  += mqtt.c mqtt_pal.c
 
 # LED configuration
 CFLAGS += -DCONFIG_LED_RGB_WS2812
