@@ -5,7 +5,6 @@
 
 #include "main.h"
 #include "led_control.h"
-#include "ui_status.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -23,7 +22,7 @@ void led_adapter_init(void)
         LV_LOG_ERROR("LED init failed: %s", led_get_error_string(err));
         return;
     }
-    g_led_is_on      = true;   /* default ON for claude_status */
+    g_led_is_on      = true;
     g_led_brightness = 50;
     led_set_color(LED_COLOR_WHITE);
     led_set_brightness(g_led_brightness);
@@ -38,7 +37,7 @@ void led_adapter_deinit(void)
 void led_adapter_on(void)
 {
     g_led_is_on = true;
-    claude_status_reapply();   /* show current claude status */
+    led_on();
 }
 
 void led_adapter_off(void)
@@ -57,7 +56,7 @@ void led_adapter_set_brightness(int32_t brightness)
     if (brightness < 0 || brightness > 100) return;
     g_led_brightness = brightness;
     if (g_led_is_on) {
-        claude_status_reapply();
+        led_set_brightness(g_led_brightness);
     }
 }
 
@@ -168,7 +167,6 @@ static void light_switch_event_cb(lv_event_t *e)
 {
     if (lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)) {
         led_adapter_on();
-        claude_status_reapply();   /* let claude_status take over */
     } else {
         led_adapter_off();
     }

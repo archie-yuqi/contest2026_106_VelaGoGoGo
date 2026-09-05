@@ -13,10 +13,11 @@
 #include "sensor.h"
 #include "led_control.h"
 #include "ui_emoji_idle.h"
-#include "ui_status.h"
 #include "ui_voice.h"
 #include "ui_settings.h"
 #include "ui_status_bar.h"
+#include "claude_mqtt.h"
+#include "ui_claude_status.h"
 #include "wifi_status.h"
 #ifdef CONFIG_LVX_USE_DEMO_CONTEST2026_106_DOUBAO_VOICE
 #include "doubao/doubao_voice.h"
@@ -32,6 +33,7 @@ extern void prox_observer_cb(lv_observer_t *, lv_subject_t *);
 #include <unistd.h>
 #include <sys/boardctl.h>
 #include <stdio.h>
+#include <syslog.h>
 #include <string.h>
 #include <time.h>
 
@@ -271,6 +273,7 @@ int main(int argc, FAR char *argv[])
 
     init_fonts();
     create_main_screen();
+    ui_claude_status_init(lv_scr_act());
 #ifdef CONFIG_LVX_USE_DEMO_CONTEST2026_106_DOUBAO_VOICE
     doubao_voice_init();
 #endif
@@ -301,17 +304,19 @@ int main(int argc, FAR char *argv[])
     led_adapter_init();
     led_adapter_diagnose();
 
-    /* Claude Code status receiver — FIFO + LED state control */
-    claude_status_init();
+    /* Claude Code status receiver — MQTT-C client */
+    syslog(LOG_INFO, "[home_scense] before claude_mqtt_init\n");
+    claude_mqtt_init();
+    syslog(LOG_INFO, "[home_scense] after claude_mqtt_init\n");
 
     /* Idle detection — reset the clock and start the 1 s check timer */
     g_last_activity = lv_tick_get();
     lv_timer_t *idle_timer = lv_timer_create(idle_check_cb, 1000, NULL);
     lv_timer_set_repeat_count(idle_timer, -1);
 
-    /* Claude status poll — 100ms timer reads FIFO for status updates */
+    /* Claude status poll — consume MQTT state on the LVGL thread */
     lv_timer_t *status_timer = lv_timer_create(
-        claude_status_poll, 100, NULL);
+        claude_mqtt_poll, 100, NULL);
     lv_timer_set_repeat_count(status_timer, -1);
 
     /* Voice and system UI polling stay on the LVGL thread. */
@@ -344,7 +349,7 @@ int main(int argc, FAR char *argv[])
 #ifdef CONFIG_LVX_USE_DEMO_CONTEST2026_106_DOUBAO_VOICE
     doubao_voice_deinit();
 #endif
-    claude_status_deinit();
+    claude_mqtt_deinit();
     led_adapter_deinit();
     return 0;
 }
