@@ -11,7 +11,7 @@ from dependency import publisher
 
 BROKER = os.environ.get("CLAUDE_MQTT_BROKER", "test.mosquitto.org")
 PORT = os.environ.get("CLAUDE_MQTT_PORT", "1883")
-TOPIC = os.environ.get("CLAUDE_MQTT_TOPIC", "hex-fight/claude-code/status/v1")
+TOPIC = os.environ.get("CLAUDE_MQTT_TOPIC", "vela-go/claude-code/status/v1")
 MESSAGES = {"idle", "thinking", "executing", "online", "offline"}
 
 
