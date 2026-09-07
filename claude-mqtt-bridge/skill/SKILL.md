@@ -20,7 +20,7 @@
 ```text
 broker: test.mosquitto.org
 port: 1883
-topic: hex-fight/claude-code/status/v1
+topic: vela-go/claude-code/status/v1
 ```
 
 电脑端发布的消息：
@@ -153,7 +153,7 @@ py scripts\\publish_status.py offline
 ```text
 CLAUDE_MQTT_BROKER       默认 test.mosquitto.org
 CLAUDE_MQTT_PORT         默认 1883
-CLAUDE_MQTT_TOPIC        默认 hex-fight/claude-code/status/v1
+CLAUDE_MQTT_TOPIC        默认 vela-go/claude-code/status/v1
 CLAUDE_MQTT_INTERVAL     默认 5
 CLAUDE_MQTT_PUB          可选，mosquitto_pub 或 mosquitto_pub.exe 的完整路径
 ```

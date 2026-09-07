@@ -16,7 +16,7 @@
 
 #define BROKER "test.mosquitto.org"
 #define PORT "1883"
-#define TOPIC "hex-fight/claude-code/status/v1"
+#define TOPIC "vela-go/claude-code/status/v1"
 #define LEASE_SECONDS 20
 
 static pthread_t g_thread;

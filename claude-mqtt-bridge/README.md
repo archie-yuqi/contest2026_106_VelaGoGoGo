@@ -45,7 +45,7 @@ default -> 普通数字轮播
 ```text
 Broker: test.mosquitto.org
 Port:   1883
-Topic:  hex-fight/claude-code/status/v1
+Topic:  vela-go/claude-code/status/v1
 ```
 
 所有消息使用同一个 topic，payload 为纯文本：
@@ -392,26 +392,26 @@ online
 
 ```sh
 mosquitto_sub -h test.mosquitto.org -p 1883 \
-  -t 'hex-fight/claude-code/status/v1' -v
+  -t 'vela-go/claude-code/status/v1' -v
 ```
 
 发布状态：
 
 ```sh
 mosquitto_pub -h test.mosquitto.org -p 1883 \
-  -t 'hex-fight/claude-code/status/v1' -m online
+  -t 'vela-go/claude-code/status/v1' -m online
 
 mosquitto_pub -h test.mosquitto.org -p 1883 \
-  -t 'hex-fight/claude-code/status/v1' -m thinking
+  -t 'vela-go/claude-code/status/v1' -m thinking
 
 mosquitto_pub -h test.mosquitto.org -p 1883 \
-  -t 'hex-fight/claude-code/status/v1' -m executing
+  -t 'vela-go/claude-code/status/v1' -m executing
 
 mosquitto_pub -h test.mosquitto.org -p 1883 \
-  -t 'hex-fight/claude-code/status/v1' -m idle
+  -t 'vela-go/claude-code/status/v1' -m idle
 
 mosquitto_pub -h test.mosquitto.org -p 1883 \
-  -t 'hex-fight/claude-code/status/v1' -m offline
+  -t 'vela-go/claude-code/status/v1' -m offline
 ```
 
 使用电脑端 Skill 测试：
