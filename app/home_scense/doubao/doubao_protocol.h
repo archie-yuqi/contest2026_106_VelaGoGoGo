@@ -16,15 +16,22 @@
 #define DOUBAO_EVENT_FINISH_SESSION    102
 #define DOUBAO_EVENT_TASK_REQUEST      200
 #define DOUBAO_EVENT_END_ASR           400
+/* 纯文本 query:直接用文字发起对话(不走音频输入),服务端回文字(550)+
+ * TTS 音频(352)。payload: {"content":"<问句>"}。用于程序化文字问答。 */
+#define DOUBAO_EVENT_CHAT_TEXT_QUERY   501
+#define DOUBAO_EVENT_CONVERSATION_RETRIEVE 512
 
 #define DOUBAO_EVENT_CONNECTION_STARTED 50
 #define DOUBAO_EVENT_SESSION_STARTED    150
+#define DOUBAO_EVENT_SESSION_FINISHED   152
 #define DOUBAO_EVENT_ASR_START         450
 #define DOUBAO_EVENT_ASR_RESPONSE       451
-#define DOUBAO_EVENT_TTS_RESPONSE       350
-#define DOUBAO_EVENT_TTS_ENDED          459
+#define DOUBAO_EVENT_ASR_ENDED          459
+#define DOUBAO_EVENT_TTS_RESPONSE       352
+#define DOUBAO_EVENT_TTS_ENDED          359
 #define DOUBAO_EVENT_CHAT_RESPONSE      550
 #define DOUBAO_EVENT_CHAT_ENDED         559
+#define DOUBAO_EVENT_CONVERSATION_RETRIEVED 569
 
 typedef enum doubao_packet_kind_e
 {

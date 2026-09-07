@@ -27,7 +27,9 @@ if(CONFIG_LVX_USE_DEMO_CONTEST2026_106_HELLO_APP)
       doubao/doubao_protocol.c
       doubao/voice_transport.c
       doubao/voice_capture.c
-      doubao/voice_player.c)
+      doubao/voice_player.c
+      doubao/wake_reply.c
+      doubao/wake_reply_assets.S)
   endif()
 
   nuttx_add_application(

@@ -21,6 +21,7 @@ struct voice_player_s
   int write_fd;
   pthread_t thread;
   volatile int running;
+  volatile int aborted;   /* abort 请求:dequeue 回调停止回填,尽快静音 */
   int audio_initialized;
 };
 
@@ -31,6 +32,14 @@ static void player_dequeue(unsigned long arg, struct ap_buffer_s *buffer)
 
   if (!player || !buffer)
     {
+      return;
+    }
+
+  /* abort 后不再回填:直接交回空缓冲,让播放尽快停下(不再把在途 TTS
+   * 灌进声卡)。 */
+  if (player->aborted)
+    {
+      buffer->nbytes = 0;
       return;
     }
 
@@ -166,7 +175,6 @@ void voice_player_close(voice_player_t *player)
     {
       return;
     }
-
   if (player->write_fd >= 0)
     {
       close(player->write_fd);
@@ -194,4 +202,16 @@ void voice_player_close(voice_player_t *player)
       fin_nxaudio(&player->audio);
     }
   free(player);
+}
+
+void voice_player_abort(voice_player_t *player)
+{
+  if (!player)
+    {
+      return;
+    }
+  /* 置 abort:dequeue 回调停止从管道回填数据,在途 TTS 被丢弃;随后走与
+   * close 相同的停止/回收流程(nxaudio_stop 立即停,不 drain 尾音)。 */
+  player->aborted = 1;
+  voice_player_close(player);
 }
