@@ -74,20 +74,18 @@ static const char *status_text(doubao_voice_state_t state)
     case DOUBAO_VOICE_UNCONFIGURED: return "请先配置豆包凭证";
     case DOUBAO_VOICE_IDLE: return "点击说话";
     case DOUBAO_VOICE_CONNECTING: return "正在连接豆包…";
-    case DOUBAO_VOICE_RECORDING: return "正在聆听…点击结束";
-    case DOUBAO_VOICE_WAITING_RESPONSE: return "识别与思考中…";
+    case DOUBAO_VOICE_LISTENING: return "聆听中…请说话";
+    case DOUBAO_VOICE_RECORDING: return "正在识别…";
+    case DOUBAO_VOICE_WAITING_RESPONSE: return "思考中…";
     case DOUBAO_VOICE_PLAYING: return "豆包正在回答…";
     case DOUBAO_VOICE_ERROR: return "语音服务发生错误";
     default: return "";
     }
 }
 
-/* 点击切换录音:第一次点击开始录音,第二次点击结束并发送。
- * 触摸屏在手指抬起时不上报 LVGL 的 RELEASED/PRESS_LOST 事件(实测松手
- * 事件一次都不触发),故"按住说话"无法结束录音、每轮录满上限才停。
- * 改用 CLICKED(按下+抬起完成一次点击)做 toggle,只依赖可靠的点击事件。 */
-static bool g_recording;   /* UI 侧本地录音态,点击切换 */
-
+/* 全双工:点击切换会话。待命(未 talking)点击 → 开始连续对话;对话中(任一
+ * 聆听/识别/思考/回答态)点击 → 停止会话。用 doubao_voice_is_talking() 判定,
+ * 不再维护本地 toggle,避免与真实状态错位。 */
 static void action_click_cb(lv_event_t *event)
 {
     static uint32_t last_click;
@@ -96,8 +94,7 @@ static void action_click_cb(lv_event_t *event)
     (void)event;
     home_record_activity();
 
-    /* 点击去抖:触摸屏偶尔把一次点击弹成两次 CLICKED(start→立刻 stop,
-     * 录音只有 1 包,用户感觉"点了没反应")。350ms 内的重复点击忽略。 */
+    /* 点击去抖:触摸屏偶尔把一次点击弹成两次 CLICKED。350ms 内重复忽略。 */
     now = lv_tick_get();
     if (now - last_click < 350) {
         return;
@@ -107,12 +104,10 @@ static void action_click_cb(lv_event_t *event)
     if (!wifi_status_is_connected()) {
         return;
     }
-    if (!g_recording) {
-        g_recording = true;
-        (void)doubao_voice_start();
-    } else {
-        g_recording = false;
+    if (doubao_voice_is_talking()) {
         (void)doubao_voice_stop();
+    } else {
+        (void)doubao_voice_start();
     }
 }
 
@@ -149,8 +144,10 @@ void ui_voice_create(lv_obj_t *parent)
 
 void ui_voice_refresh(lv_timer_t *timer)
 {
-    doubao_voice_snapshot_t snapshot;
-    bool enabled;
+    /* snapshot 含 assistant_text[DOUBAO_REPLY_MAX=8192],放栈上约 9KB,叠加
+     * LVGL 主线程调用链易压爆 100KB 栈。改 static:refresh 由 LVGL 单线程
+     * 周期调用,无并发,与 g_last_user/g_last_reply 一致。 */
+    static doubao_voice_snapshot_t snapshot;
 
     (void)timer;
     if (!g_action) return;
@@ -182,16 +179,11 @@ void ui_voice_refresh(lv_timer_t *timer)
                       snapshot.error_text[0] ? snapshot.error_text :
                       status_text(snapshot.state));
 
-    /* g_recording 与真实状态同步自愈:录音结束(worker 进入 WAITING/PLAYING
-     * 等非 RECORDING 态)后把本地 toggle 复位,避免下次点击语义颠倒。 */
-    if (g_recording && snapshot.state != DOUBAO_VOICE_RECORDING &&
-        snapshot.state != DOUBAO_VOICE_IDLE) {
-        g_recording = false;
-    }
-
-    enabled = (snapshot.state == DOUBAO_VOICE_IDLE ||
-               snapshot.state == DOUBAO_VOICE_RECORDING) &&
-              wifi_status_is_connected();
+    /* 全双工按钮:
+     *  - 未配置 / Wi-Fi 未连 / 连接中 → 禁用,提示原因
+     *  - 对话中(talking:聆听/识别/思考/回答任一态)→ "停止对话"(红),可点
+     *  - 待命(IDLE)→ "开始对话"(蓝),可点
+     *  - ERROR → "点击重试"(橙),可点(触发重新开始) */
     if (snapshot.state == DOUBAO_VOICE_UNCONFIGURED) {
         lv_label_set_text(g_action_label, "请先配置豆包凭证");
         lv_obj_set_style_bg_color(g_action, lv_color_hex(0x566573), 0);
@@ -204,21 +196,17 @@ void ui_voice_refresh(lv_timer_t *timer)
         lv_label_set_text(g_action_label, "连接中…");
         lv_obj_set_style_bg_color(g_action, lv_color_hex(0x566573), 0);
         lv_obj_add_state(g_action, LV_STATE_DISABLED);
-    } else if (snapshot.state == DOUBAO_VOICE_RECORDING) {
-        lv_label_set_text(g_action_label, "正在录音…点击结束");
+    } else if (doubao_voice_is_talking()) {
+        lv_label_set_text(g_action_label, "停止对话");
         lv_obj_set_style_bg_color(g_action, lv_color_hex(0xC0392B), 0);
         lv_obj_clear_state(g_action, LV_STATE_DISABLED);
     } else if (snapshot.state == DOUBAO_VOICE_ERROR) {
         lv_label_set_text(g_action_label, "点击重试");
         lv_obj_set_style_bg_color(g_action, lv_color_hex(0xD68910), 0);
         lv_obj_clear_state(g_action, LV_STATE_DISABLED);
-    } else if (enabled) {
-        lv_label_set_text(g_action_label, "点击说话");
+    } else {
+        lv_label_set_text(g_action_label, "开始对话");
         lv_obj_set_style_bg_color(g_action, lv_color_hex(0x1F618D), 0);
         lv_obj_clear_state(g_action, LV_STATE_DISABLED);
-    } else {
-        lv_label_set_text(g_action_label, "豆包处理中…");
-        lv_obj_set_style_bg_color(g_action, lv_color_hex(0x566573), 0);
-        lv_obj_add_state(g_action, LV_STATE_DISABLED);
     }
 }

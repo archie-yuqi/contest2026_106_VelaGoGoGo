@@ -10,7 +10,9 @@ ASRCS   = emoji_blob.S claude_idle.S claude_thinking.S claude_executing.S
 
 ifeq ($(CONFIG_LVX_USE_DEMO_CONTEST2026_106_DOUBAO_VOICE),y)
 CSRCS += ui_voice.c doubao/doubao_voice.c doubao/doubao_protocol.c \
-         doubao/voice_transport.c doubao/voice_capture.c doubao/voice_player.c
+         doubao/voice_transport.c doubao/voice_capture.c doubao/voice_player.c \
+         doubao/wake_reply.c
+ASRCS += doubao/wake_reply_assets.S
 endif
 
 PROGNAME  = $(CONFIG_LVX_USE_DEMO_CONTEST2026_106_PROGNAME)

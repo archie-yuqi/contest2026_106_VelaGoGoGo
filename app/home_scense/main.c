@@ -137,7 +137,9 @@ static void idle_check_cb(lv_timer_t *timer)
     if (g_idle_active) return;
 
 #ifdef CONFIG_LVX_USE_DEMO_CONTEST2026_106_DOUBAO_VOICE
-    doubao_voice_snapshot_t voice;
+    /* snapshot 含 assistant_text[DOUBAO_REPLY_MAX=8192] 约 9KB;放栈上会压爆
+     * 100KB 主线程栈(实测崩溃)。改 static:LVGL 单线程周期回调,无并发。 */
+    static doubao_voice_snapshot_t voice;
     doubao_voice_get_snapshot(&voice);
     if (voice.state == DOUBAO_VOICE_CONNECTING ||
         voice.state == DOUBAO_VOICE_RECORDING ||
